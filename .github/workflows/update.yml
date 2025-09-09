@@ -14,6 +14,11 @@ jobs:
       - uses: cachix/install-nix-action@v24
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean and refresh
+        run: |
+          git add .
+          git status
           
       - name: Check for updates
         id: check
@@ -38,6 +43,9 @@ jobs:
           
           # Update hash in package.nix
           sed -i "s/sha256-[A-Za-z0-9+/=]*/sha256-$NEW_HASH_B64/" package.nix
+
+      - name: Ensure clean git state
+        run: git add .
           
       - name: Test build
         if: steps.check.outputs.update_needed == 'true'
