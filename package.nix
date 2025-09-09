@@ -1,33 +1,51 @@
 { lib
 , stdenv
-, fetchurl
+, fetchFromGitHub
+, gradle
 , jdk21
 , makeWrapper
 , copyDesktopItems
 , makeDesktopItem
-, unzip
 }:
 
 stdenv.mkDerivation rec {
   pname = "ab-download-manager";
   version = "1.6.8";
 
-  # Use pre-built Linux release instead of building from source
-  src = fetchurl {
-    url = "https://github.com/amir1376/ab-download-manager/releases/download/v${version}/ABDownloadManager-${version}-linux.tar.gz";
-    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; # Update this
+  src = fetchFromGitHub {
+    owner = "amir1376";
+    repo = "ab-download-manager";
+    rev = "v${version}";
+    hash = "sha256-bkLnkWdeE2euZR8r43pSMjAFg045lV3msKJPSN9OJJI=";
   };
 
   nativeBuildInputs = [
+    gradle
+    jdk21
     makeWrapper
     copyDesktopItems
-    unzip
   ];
 
-  unpackPhase = ''
-    runHook preUnpack
-    tar -xzf $src
-    runHook postUnpack
+  # Allow network access for Gradle to download dependencies
+  __darwinAllowLocalNetworking = true;
+
+  buildPhase = ''
+    runHook preBuild
+    
+    export GRADLE_USER_HOME=$(mktemp -d)
+    export GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false"
+    
+    # Try to build with more verbose output and proper Java version
+    gradle --no-daemon --stacktrace --info createReleaseFolderForCi || {
+      echo "First build attempt failed, trying alternative tasks..."
+      gradle --no-daemon tasks --all
+      echo "Available tasks listed above"
+      
+      # Try alternative build tasks
+      gradle --no-daemon build || gradle --no-daemon assemble
+    }
+    
+    runHook postBuild
   '';
 
   installPhase = ''
@@ -35,19 +53,36 @@ stdenv.mkDerivation rec {
     
     mkdir -p $out/{bin,lib,share}
     
-    # Copy all files
-    cp -r * $out/lib/
+    echo "Build output directory contents:"
+    find build -type f -name "*.jar" || true
+    ls -la build/ || true
+    
+    # Look for output in various possible locations
+    if [ -d "build/ci-release" ]; then
+      echo "Found ci-release directory"
+      cp -r build/ci-release/* $out/lib/
+    elif [ -d "build/libs" ]; then
+      echo "Found libs directory"  
+      cp -r build/libs/* $out/lib/
+    elif [ -d "build/distributions" ]; then
+      echo "Found distributions directory"
+      cp -r build/distributions/* $out/lib/
+    else
+      echo "Looking for any JAR files..."
+      find build -name "*.jar" -exec cp {} $out/lib/ \;
+    fi
     
     # Find the main JAR file
     MAIN_JAR=$(find $out/lib -name "*.jar" -type f | head -n1)
     
     if [ -z "$MAIN_JAR" ]; then
-      echo "No JAR file found! Contents:"
-      find $out/lib -type f
+      echo "No JAR file found after build!"
+      echo "Contents of $out/lib:"
+      ls -la $out/lib/ || true
       exit 1
     fi
     
-    echo "Found JAR: $MAIN_JAR"
+    echo "Using JAR: $MAIN_JAR"
     
     # Create wrapper script
     makeWrapper ${jdk21}/bin/java $out/bin/ab-download-manager \
@@ -55,14 +90,14 @@ stdenv.mkDerivation rec {
       --set JAVA_HOME "${jdk21}" \
       --prefix PATH : "${lib.makeBinPath [ jdk21 ]}"
     
-    # Install icon if it exists
-    if [ -f $out/lib/icon.png ]; then
-      mkdir -p $out/share/pixmaps
-      cp $out/lib/icon.png $out/share/pixmaps/ab-download-manager.png
-    elif [ -f $out/lib/app_icon.png ]; then
-      mkdir -p $out/share/pixmaps
-      cp $out/lib/app_icon.png $out/share/pixmaps/ab-download-manager.png
-    fi
+    # Install icon if available
+    for icon_path in "shared/resources/icon/app_icon.png" "resources/icon/app_icon.png" "app_icon.png"; do
+      if [ -f "$icon_path" ]; then
+        mkdir -p $out/share/pixmaps
+        cp "$icon_path" $out/share/pixmaps/ab-download-manager.png
+        break
+      fi
+    done
     
     runHook postInstall
   '';
