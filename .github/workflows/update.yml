@@ -2,61 +2,95 @@ name: Update AB Download Manager
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Daily check
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
   workflow_dispatch:
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       
-      - uses: cachix/install-nix-action@v24
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
+          
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v12
+        with:
+          name: ab-download-manager
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          
       - name: Check for updates
         id: check
         run: |
           CURRENT=$(grep 'version = ' package.nix | cut -d'"' -f2)
           LATEST=$(curl -s https://api.github.com/repos/amir1376/ab-download-manager/releases/latest | jq -r .tag_name | sed 's/^v//')
           
+          echo "Current version: $CURRENT"
+          echo "Latest version: $LATEST"
+          
           if [ "$CURRENT" != "$LATEST" ]; then
             echo "update_needed=true" >> $GITHUB_OUTPUT
             echo "new_version=$LATEST" >> $GITHUB_OUTPUT
+            echo "Update needed from $CURRENT to $LATEST"
+          else
+            echo "update_needed=false" >> $GITHUB_OUTPUT
+            echo "No update needed"
           fi
           
       - name: Update package
         if: steps.check.outputs.update_needed == 'true'
         run: |
+          echo "Updating to version ${{ steps.check.outputs.new_version }}"
+          
           # Update version
           sed -i "s/version = \".*\"/version = \"${{ steps.check.outputs.new_version }}\"/" package.nix
           
-          # Get correct hash using nix-prefetch-url
+          # Get correct hash
           NEW_HASH=$(nix-prefetch-url --unpack "https://github.com/amir1376/ab-download-manager/archive/v${{ steps.check.outputs.new_version }}.tar.gz")
           NEW_HASH_B64=$(nix hash to-base64 --type sha256 $NEW_HASH)
           
-          # Update hash in package.nix
-          sed -i "s/sha256-[A-Za-z0-9+/=]*/sha256-$NEW_HASH_B64/" package.nix
-
-      - name: Ensure clean git state
-        run: git add .
+          echo "New hash: sha256-$NEW_HASH_B64"
           
+          # Update hash in package.nix
+          sed -i "s/hash = \"sha256-[A-Za-z0-9+/=]*\"/hash = \"sha256-$NEW_HASH_B64\"/" package.nix
+          
+          # Show changes
+          git diff package.nix
+
       - name: Test build
         if: steps.check.outputs.update_needed == 'true'
         run: |
-          nix build .#ab-download-manager
+          echo "Testing build with new version..."
+          nix build .#ab-download-manager --show-trace
+          echo "Build successful!"
           
-      - name: Create PR
+      - name: Create Pull Request
         if: steps.check.outputs.update_needed == 'true'
         uses: peter-evans/create-pull-request@v5
         with:
-          title: "Update AB Download Manager to v${{ steps.check.outputs.new_version }}"
-          commit-message: "Update AB Download Manager to v${{ steps.check.outputs.new_version }}"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update AB Download Manager to v${{ steps.check.outputs.new_version }}"
+          title: "🚀 Update AB Download Manager to v${{ steps.check.outputs.new_version }}"
           branch: update-v${{ steps.check.outputs.new_version }}
+          delete-branch: true
           body: |
-            Automated update to AB Download Manager v${{ steps.check.outputs.new_version }}
+            ## 🚀 Automated Update
             
-            - Updated version in package.nix
-            - Updated source hash
-            - Tested build
+            Updates AB Download Manager from the current version to **v${{ steps.check.outputs.new_version }}**.
+            
+            ### Changes
+            - ✅ Updated version in `package.nix`
+            - ✅ Updated source hash
+            - ✅ Build tested successfully
+            
+            ### Release Notes
+            See the [upstream release](https://github.com/amir1376/ab-download-manager/releases/tag/v${{ steps.check.outputs.new_version }}) for details.
+            
+            ---
+            *This PR was created automatically by the update workflow.*
