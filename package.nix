@@ -20,7 +20,7 @@ stdenv.mkDerivation rec {
     repo = "ab-download-manager";
     rev = "v${version}";
     # Update this hash after first build attempt
-  hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
   };
 
   nativeBuildInputs = [
@@ -36,14 +36,9 @@ stdenv.mkDerivation rec {
     gsettings-desktop-schemas
   ];
 
-  mitmCache = gradle.fetchDeps {
-    pkg = finalAttrs;
-    data = ./deps.json;
-  };
-
   __darwinAllowLocalNetworking = true;
 
-  gradleFlags = [ "--no-daemon" "--offline" ];
+  gradleFlags = [ "--no-daemon" ];
 
   buildPhase = ''
     runHook preBuild
