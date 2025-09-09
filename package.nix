@@ -1,52 +1,33 @@
 { lib
 , stdenv
-, fetchFromGitHub
-, gradle
+, fetchurl
 , jdk21
 , makeWrapper
 , copyDesktopItems
 , makeDesktopItem
-, wrapGAppsHook
-, gtk3
-, gsettings-desktop-schemas
+, unzip
 }:
 
 stdenv.mkDerivation rec {
   pname = "ab-download-manager";
   version = "1.6.8";
 
-  src = fetchFromGitHub {
-    owner = "amir1376";
-    repo = "ab-download-manager";
-    rev = "v${version}";
-    # Update this hash after first build attempt
-    hash = "sha256-bkLnkWdeE2euZR8r43pSMjAFg045lV3msKJPSN9OJJI=";
+  # Use pre-built Linux release instead of building from source
+  src = fetchurl {
+    url = "https://github.com/amir1376/ab-download-manager/releases/download/v${version}/ABDownloadManager-${version}-linux.tar.gz";
+    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; # Update this
   };
 
   nativeBuildInputs = [
-    gradle
-    jdk21
     makeWrapper
     copyDesktopItems
-    wrapGAppsHook
+    unzip
   ];
 
-  buildInputs = [
-    gtk3
-    gsettings-desktop-schemas
-  ];
-
-  __darwinAllowLocalNetworking = true;
-
-  gradleFlags = [ "--no-daemon" ];
-
-  buildPhase = ''
-    runHook preBuild
-    
-    export GRADLE_USER_HOME=$(mktemp -d)
-    gradle $gradleFlags createReleaseFolderForCi
-    
-    runHook postBuild
+  unpackPhase = ''
+    runHook preUnpack
+    tar -xzf $src
+    runHook postUnpack
   '';
 
   installPhase = ''
@@ -54,18 +35,34 @@ stdenv.mkDerivation rec {
     
     mkdir -p $out/{bin,lib,share}
     
-    # Copy the built application
-    cp -r build/ci-release/* $out/lib/
+    # Copy all files
+    cp -r * $out/lib/
+    
+    # Find the main JAR file
+    MAIN_JAR=$(find $out/lib -name "*.jar" -type f | head -n1)
+    
+    if [ -z "$MAIN_JAR" ]; then
+      echo "No JAR file found! Contents:"
+      find $out/lib -type f
+      exit 1
+    fi
+    
+    echo "Found JAR: $MAIN_JAR"
     
     # Create wrapper script
     makeWrapper ${jdk21}/bin/java $out/bin/ab-download-manager \
-      --add-flags "-jar $out/lib/ABDownloadManager.jar" \
+      --add-flags "-jar $MAIN_JAR" \
       --set JAVA_HOME "${jdk21}" \
       --prefix PATH : "${lib.makeBinPath [ jdk21 ]}"
     
-    # Install icon
-    mkdir -p $out/share/pixmaps
-    cp shared/resources/icon/app_icon.png $out/share/pixmaps/ab-download-manager.png
+    # Install icon if it exists
+    if [ -f $out/lib/icon.png ]; then
+      mkdir -p $out/share/pixmaps
+      cp $out/lib/icon.png $out/share/pixmaps/ab-download-manager.png
+    elif [ -f $out/lib/app_icon.png ]; then
+      mkdir -p $out/share/pixmaps
+      cp $out/lib/app_icon.png $out/share/pixmaps/ab-download-manager.png
+    fi
     
     runHook postInstall
   '';
