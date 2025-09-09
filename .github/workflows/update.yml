@@ -15,11 +15,6 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Clean and refresh
-        run: |
-          git add .
-          git status
-          
       - name: Check for updates
         id: check
         run: |
