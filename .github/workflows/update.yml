@@ -1,0 +1,61 @@
+name: Update AB Download Manager
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Daily check
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: cachix/install-nix-action@v24
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Check for updates
+        id: check
+        run: |
+          CURRENT=$(grep 'version = ' package.nix | cut -d'"' -f2)
+          LATEST=$(curl -s https://api.github.com/repos/amir1376/ab-download-manager/releases/latest | jq -r .tag_name | sed 's/^v//')
+          
+          if [ "$CURRENT" != "$LATEST" ]; then
+            echo "update_needed=true" >> $GITHUB_OUTPUT
+            echo "new_version=$LATEST" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Update package
+        if: steps.check.outputs.update_needed == 'true'
+        run: |
+          # Update version
+          sed -i "s/version = \".*\"/version = \"${{ steps.check.outputs.new_version }}\"/" package.nix
+          
+          # Update hash (will need manual update or nix-prefetch)
+          nix-prefetch fetchFromGitHub \
+            --owner amir1376 \
+            --repo ab-download-manager \
+            --rev "v${{ steps.check.outputs.new_version }}" > /tmp/hash
+            
+          NEW_HASH=$(cat /tmp/hash)
+          sed -i "s/hash = \".*\"/hash = \"$NEW_HASH\"/" package.nix
+          
+      - name: Test build
+        if: steps.check.outputs.update_needed == 'true'
+        run: |
+          nix build .#ab-download-manager
+          
+      - name: Create PR
+        if: steps.check.outputs.update_needed == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          title: "Update AB Download Manager to v${{ steps.check.outputs.new_version }}"
+          commit-message: "Update AB Download Manager to v${{ steps.check.outputs.new_version }}"
+          branch: update-v${{ steps.check.outputs.new_version }}
+          body: |
+            Automated update to AB Download Manager v${{ steps.check.outputs.new_version }}
+            
+            - Updated version in package.nix
+            - Updated source hash
+            - Tested build
