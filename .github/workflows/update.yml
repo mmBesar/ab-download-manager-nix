@@ -32,14 +32,12 @@ jobs:
           # Update version
           sed -i "s/version = \".*\"/version = \"${{ steps.check.outputs.new_version }}\"/" package.nix
           
-          # Update hash (will need manual update or nix-prefetch)
-          nix-prefetch fetchFromGitHub \
-            --owner amir1376 \
-            --repo ab-download-manager \
-            --rev "v${{ steps.check.outputs.new_version }}" > /tmp/hash
-            
-          NEW_HASH=$(cat /tmp/hash)
-          sed -i "s/hash = \".*\"/hash = \"$NEW_HASH\"/" package.nix
+          # Get correct hash using nix-prefetch-url
+          NEW_HASH=$(nix-prefetch-url --unpack "https://github.com/amir1376/ab-download-manager/archive/v${{ steps.check.outputs.new_version }}.tar.gz")
+          NEW_HASH_B64=$(nix hash to-base64 --type sha256 $NEW_HASH)
+          
+          # Update hash in package.nix
+          sed -i "s/sha256-[A-Za-z0-9+/=]*/sha256-$NEW_HASH_B64/" package.nix
           
       - name: Test build
         if: steps.check.outputs.update_needed == 'true'
