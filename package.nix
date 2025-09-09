@@ -19,7 +19,8 @@ stdenv.mkDerivation rec {
     owner = "amir1376";
     repo = "ab-download-manager";
     rev = "v${version}";
-    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; # Update this
+    # Update this hash after first build attempt
+  hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
   };
 
   nativeBuildInputs = [
