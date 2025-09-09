@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v12
+        with:
+          name: ab-download-manager
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          
+      - name: Build and cache
+        run: |
+          echo "Building for release..."
+          nix build .#ab-download-manager
+          nix build .#ab-download-manager | cachix push ab-download-manager
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true
+          body: |
+            ## AB Download Manager Nix Package
+            
+            This release provides a Nix flake for AB Download Manager.
+            
+            ### Usage
+            ```nix
+            inputs.ab-download-manager.url = "github:${{ github.repository }}";
+            ```
+            
+            ### Home Manager
+            ```nix
+            programs.ab-download-manager.enable = true;
+            ```
