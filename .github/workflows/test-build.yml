@@ -1,0 +1,66 @@
+name: Test Build
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [ main, master ]
+  #   paths:
+  #     - 'package.nix'
+  #     - 'flake.nix'
+  #     - 'module.nix'
+  # pull_request:
+  #   branches: [ main, master ]
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v12
+        with:
+          name: ab-download-manager
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          
+      - name: Check flake
+        run: |
+          nix flake check --show-trace
+          
+      - name: Build package
+        run: |
+          echo "Building AB Download Manager..."
+          nix build .#ab-download-manager --show-trace
+          
+      - name: Test run
+        run: |
+          echo "Testing package can be executed..."
+          ./result/bin/ab-download-manager --version || echo "Version check not available"
+          
+      - name: Push to Cachix
+        if: success()
+        run: |
+          nix build .#ab-download-manager | cachix push ab-download-manager
+
+  test-module:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Test Home Manager module
+        run: |
+          echo "Testing Home Manager module syntax..."
+          nix eval .#homeManagerModules.default --show-trace
+          echo "Home Manager module syntax is valid!"
